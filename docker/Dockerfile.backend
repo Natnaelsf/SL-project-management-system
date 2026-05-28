@@ -33,9 +33,6 @@ COPY --from=builder /app/prisma ./prisma
 # Create uploads directory
 RUN mkdir -p uploads
 
-# Copy seed script for manual execution
-COPY --from=builder /app/dist/prisma/seed.js ./dist/prisma/seed.js 2>/dev/null || true
-
 EXPOSE 4000
 
 # Run migrations and start

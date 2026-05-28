@@ -195,51 +195,68 @@ docker compose -f docker/docker-compose.yml logs -f
 - API: `http://localhost:4000/api/v1`
 - Database: `localhost:5432`
 
+### Prerequisites
+
+```bash
+# On your server (192.168.100.205)
+ssh user@192.168.100.205
+```
+
+### Deploy via Git
+
+```bash
+# Clone the repository directly on the server
+git clone https://github.com/Natnaelsf/SL-project-management-system.git ~/slpcms
+cd ~/slpcms
+
+# Deploy with Docker
+docker compose -f docker/docker-compose.yml up -d --build
+
+# Seed database (first time only)
+docker exec slpcms-backend npx prisma db seed
+```
+
+### Access the Application
+- Frontend: `http://192.168.100.205` (via NGINX, port 80)
+- Direct frontend: `http://192.168.100.205:8080`
+- API: `http://192.168.100.205/api/v1`
+
 ## Ubuntu VPS Deployment
 
 ### Requirements
 - Ubuntu Server 24.04 LTS
-- 4 vCPU, 8GB RAM, 100GB SSD
 - Docker & Docker Compose installed
 
-### Deployment Steps
-
-1. **Install Docker**
+### 1. Install Docker
 ```bash
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 sudo usermod -aG docker $USER
+exit  # reconnect after this
 ```
 
-2. **Clone and Deploy**
+### 2. Clone and Deploy
 ```bash
-git clone <repository-url>
-cd slpcms
+ssh user@192.168.100.205
+git clone https://github.com/Natnaelsf/SL-project-management-system.git ~/slpcms
+cd ~/slpcms
 
-# Set up environment
-cp .env.production.example .env
-# Edit .env with your production values
-
-# Deploy with Docker
+# Build and start all services
 docker compose -f docker/docker-compose.yml up -d --build
+
+# Seed database
+docker exec slpcms-backend npx prisma db seed
 ```
 
-3. **Set up SSL (Optional but Recommended)**
-```bash
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx
-
-# Obtain SSL certificate
-sudo certbot --nginx -d your-domain.com
-```
-
-4. **Configure Firewall**
+### 3. Configure Firewall
 ```bash
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw enable
 ```
+
+## Useful Docker Commands
 
 ## API Endpoints
 

@@ -1,0 +1,557 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ======================== ENUMS ========================
+
+enum UserRole {
+  SUPER_ADMIN
+  DIRECTOR
+  PROJECT_MANAGER
+  CONTRACT_ENGINEER
+  CONSULTANT
+  CONTRACTOR
+  FINANCE_OFFICER
+}
+
+enum ProjectStatus {
+  PLANNING
+  TENDER
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  AMENDED
+  COMPLETED
+  TERMINATED
+}
+
+enum BoqStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REVISED
+}
+
+enum IpcStatus {
+  DRAFT
+  SUBMITTED
+  VERIFIED
+  CERTIFIED
+  APPROVED
+  PAID
+  REJECTED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DocumentCategory {
+  CONTRACT
+  BOQ
+  IPC
+  REPORT
+  DRAWING
+  SPECIFICATION
+  CORRESPONDENCE
+  OTHER
+}
+
+enum NotificationType {
+  APPROVAL_REQUEST
+  APPROVAL_GRANTED
+  APPROVAL_REJECTED
+  PROJECT_DELAYED
+  IPC_SUBMITTED
+  IPC_APPROVED
+  CONTRACT_AMENDMENT
+  GENERAL
+}
+
+// ======================== MODELS ========================
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  password        String
+  firstName       String
+  lastName        String
+  phone           String?
+  role            UserRole  @default(PROJECT_MANAGER)
+  isActive        Boolean   @default(true)
+  avatarUrl       String?
+  refreshToken    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  createdProjects     Project[]       @relation("ProjectCreator")
+  assignedProjects    Project[]       @relation("ProjectAssignee")
+  managedContracts    Contract[]      @relation("ContractManager")
+  createdBoqs        BoqItem[]       @relation("BoqCreator")
+  approvedBoqs       BoqApproval[]   @relation("BoqApprover")
+  createdIpcs        IpcPayment[]    @relation("IpcCreator")
+  verifiedIpcs       IpcVerification[] @relation("IpcVerifier")
+  createdDocuments   Document[]      @relation("DocumentUploader")
+  sentNotifications  Notification[]  @relation("NotificationSender")
+  receivedNotifications Notification[] @relation("NotificationReceiver")
+  approvals          Approval[]      @relation("ApprovalUser")
+  auditLogs          AuditLog[]      @relation("AuditLogUser")
+
+  @@map("users")
+}
+
+model Project {
+  id              String        @id @default(uuid())
+  projectId       String        @unique
+  name            String
+  description     String?
+  budget          Decimal       @default(0) @db.Decimal(15, 2)
+  startDate       DateTime
+  endDate         DateTime
+  status          ProjectStatus @default(PLANNING)
+  progressPercent Float         @default(0)
+  location        String?
+  remarks         String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  // Foreign Keys
+  createdById     String
+  assignedToId    String?
+  contractorId    String?
+  consultantId    String?
+
+  // Relations
+  createdBy       User          @relation("ProjectCreator", fields: [createdById], references: [id])
+  assignedTo      User?         @relation("ProjectAssignee", fields: [assignedToId], references: [id])
+  contractor      Contractor?   @relation("ContractorProjects", fields: [contractorId], references: [id])
+  consultant      Contractor?   @relation("ProjectConsultant", fields: [consultantId], references: [id])
+  contracts       Contract[]
+  boqItems        BoqItem[]
+  ipcPayments     IpcPayment[]
+  projectProgress ProjectProgress[]
+  documents       Document[]
+  approvals       Approval[]
+
+  @@index([status])
+  @@index([startDate, endDate])
+  @@index([contractorId])
+  @@map("projects")
+}
+
+model Contractor {
+  id              String      @id @default(uuid())
+  name            String
+  contactPerson   String?
+  email           String?
+  phone           String?
+  address         String?
+  licenseNumber   String?
+  specialization  String?
+  isConsultant    Boolean     @default(false)
+  isActive        Boolean     @default(true)
+  remarks         String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  projects        Project[]   @relation("ContractorProjects")
+  consultedProjects Project[] @relation("ProjectConsultant")
+  contracts       Contract[]
+  boqItems        BoqItem[]
+  ipcPayments     IpcPayment[]
+
+  @@index([name])
+  @@index([isConsultant])
+  @@map("contractors")
+}
+
+model Contract {
+  id                String         @id @default(uuid())
+  contractNumber    String         @unique
+  contractAmount    Decimal        @default(0) @db.Decimal(15, 2)
+  startDate         DateTime
+  endDate           DateTime
+  status            ContractStatus @default(DRAFT)
+  retentionPercent  Float          @default(10)
+  performanceBond   Decimal?       @default(0) @db.Decimal(15, 2)
+  description       String?
+  remarks           String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  // Foreign Keys
+  projectId         String
+  contractorId      String
+  managedById       String
+
+  // Relations
+  project           Project        @relation(fields: [projectId], references: [id])
+  contractor        Contractor     @relation(fields: [contractorId], references: [id])
+  managedBy         User           @relation("ContractManager", fields: [managedById], references: [id])
+  amendments        ContractAmendment[]
+  variationOrders   VariationOrder[]
+  extensions        ExtensionOfTime[]
+  approvals         Approval[]
+  documents         Document[]
+
+  @@index([status])
+  @@index([projectId])
+  @@index([contractorId])
+  @@map("contracts")
+}
+
+model ContractAmendment {
+  id              String   @id @default(uuid())
+  amendmentNumber String
+  description     String
+  amountChange    Decimal  @default(0) @db.Decimal(15, 2)
+  date            DateTime @default(now())
+  approvedBy      String?
+  remarks         String?
+  createdAt       DateTime @default(now())
+
+  // Foreign Keys
+  contractId      String
+
+  // Relations
+  contract        Contract @relation(fields: [contractId], references: [id])
+
+  @@map("contract_amendments")
+}
+
+model VariationOrder {
+  id              String   @id @default(uuid())
+  voNumber        String
+  description     String
+  amountChange    Decimal  @default(0) @db.Decimal(15, 2)
+  status          String   @default("PENDING")
+  approvedBy      String?
+  date            DateTime @default(now())
+  remarks         String?
+  createdAt       DateTime @default(now())
+
+  // Foreign Keys
+  contractId      String
+
+  // Relations
+  contract        Contract @relation(fields: [contractId], references: [id])
+
+  @@map("variation_orders")
+}
+
+model ExtensionOfTime {
+  id              String   @id @default(uuid())
+  extensionNumber String
+  reason          String
+  daysExtended    Int
+  newEndDate      DateTime
+  approvedBy      String?
+  status          String   @default("PENDING")
+  date            DateTime @default(now())
+  remarks         String?
+  createdAt       DateTime @default(now())
+
+  // Foreign Keys
+  contractId      String
+
+  // Relations
+  contract        Contract @relation(fields: [contractId], references: [id])
+
+  @@map("extensions_of_time")
+}
+
+model BoqItem {
+  id              String   @id @default(uuid())
+  itemCode        String
+  description     String
+  unit            String
+  quantity        Decimal  @default(0) @db.Decimal(15, 2)
+  unitPrice       Decimal  @default(0) @db.Decimal(15, 2)
+  totalPrice      Decimal  @default(0) @db.Decimal(15, 2)
+  executedQty     Decimal  @default(0) @db.Decimal(15, 2)
+  status          BoqStatus @default(DRAFT)
+  revision        Int      @default(1)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  // Foreign Keys
+  projectId       String
+  contractorId    String?
+  createdById     String
+
+  // Relations
+  project         Project  @relation(fields: [projectId], references: [id])
+  contractor      Contractor? @relation(fields: [contractorId], references: [id])
+  createdBy       User     @relation("BoqCreator", fields: [createdById], references: [id])
+  approvals       BoqApproval[]
+  ipcQuantities   IpcQuantity[]
+
+  @@index([projectId])
+  @@index([itemCode])
+  @@map("boq_items")
+}
+
+model BoqApproval {
+  id              String         @id @default(uuid())
+  status          ApprovalStatus @default(PENDING)
+  comment         String?
+  createdAt       DateTime       @default(now())
+
+  // Foreign Keys
+  boqItemId       String
+  approvedById    String
+
+  // Relations
+  boqItem         BoqItem        @relation(fields: [boqItemId], references: [id])
+  approvedBy      User           @relation("BoqApprover", fields: [approvedById], references: [id])
+
+  @@map("boq_approvals")
+}
+
+model IpcPayment {
+  id              String    @id @default(uuid())
+  ipcNumber       String    @unique
+  description     String?
+  amount          Decimal   @default(0) @db.Decimal(15, 2)
+  certifiedAmount Decimal?  @default(0) @db.Decimal(15, 2)
+  retentionAmount Decimal?  @default(0) @db.Decimal(15, 2)
+  netAmount       Decimal?  @default(0) @db.Decimal(15, 2)
+  status          IpcStatus @default(DRAFT)
+  submissionDate  DateTime?
+  certificationDate DateTime?
+  paymentDate     DateTime?
+  remarks         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  // Foreign Keys
+  projectId       String
+  contractorId    String
+  createdById     String
+
+  // Relations
+  project         Project   @relation(fields: [projectId], references: [id])
+  contractor      Contractor @relation(fields: [contractorId], references: [id])
+  createdBy       User      @relation("IpcCreator", fields: [createdById], references: [id])
+  verifications   IpcVerification[]
+  ipcQuantities   IpcQuantity[]
+  payments        Payment[]
+
+  @@index([status])
+  @@index([projectId])
+  @@index([ipcNumber])
+  @@map("ipc_payments")
+}
+
+model IpcVerification {
+  id              String         @id @default(uuid())
+  verifiedQty     Decimal        @default(0) @db.Decimal(15, 2)
+  comment         String?
+  status          ApprovalStatus @default(PENDING)
+  createdAt       DateTime       @default(now())
+
+  // Foreign Keys
+  ipcPaymentId    String
+  verifiedById    String
+
+  // Relations
+  ipcPayment      IpcPayment     @relation(fields: [ipcPaymentId], references: [id])
+  verifiedBy      User           @relation("IpcVerifier", fields: [verifiedById], references: [id])
+
+  @@map("ipc_verifications")
+}
+
+model IpcQuantity {
+  id              String   @id @default(uuid())
+  executedQty     Decimal  @default(0) @db.Decimal(15, 2)
+  previousQty     Decimal  @default(0) @db.Decimal(15, 2)
+  currentQty      Decimal  @default(0) @db.Decimal(15, 2)
+  unitPrice       Decimal  @default(0) @db.Decimal(15, 2)
+  amount          Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt       DateTime @default(now())
+
+  // Foreign Keys
+  ipcPaymentId    String
+  boqItemId       String
+
+  // Relations
+  ipcPayment      IpcPayment @relation(fields: [ipcPaymentId], references: [id])
+  boqItem         BoqItem    @relation(fields: [boqItemId], references: [id])
+
+  @@map("ipc_quantities")
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  paymentNumber   String   @unique
+  amount          Decimal  @default(0) @db.Decimal(15, 2)
+  paymentDate     DateTime @default(now())
+  paymentMethod   String?
+  reference       String?
+  remarks         String?
+  createdAt       DateTime @default(now())
+
+  // Foreign Keys
+  ipcPaymentId    String
+
+  // Relations
+  ipcPayment      IpcPayment @relation(fields: [ipcPaymentId], references: [id])
+
+  @@map("payments")
+}
+
+model ProjectProgress {
+  id              String   @id @default(uuid())
+  progressPercent Float    @default(0)
+  description     String?
+  reportDate      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  // Foreign Keys
+  projectId       String
+  reportedById    String?
+
+  // Relations
+  project         Project  @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+  @@index([reportDate])
+  @@map("project_progress")
+}
+
+model Document {
+  id              String           @id @default(uuid())
+  title           String
+  fileName        String
+  filePath        String
+  fileSize        Int              @default(0)
+  mimeType        String
+  category        DocumentCategory @default(OTHER)
+  version         Int              @default(1)
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+
+  // Foreign Keys
+  projectId       String?
+  contractId      String?
+  uploadedById    String
+
+  // Relations
+  project         Project?         @relation(fields: [projectId], references: [id])
+  contract        Contract?        @relation(fields: [contractId], references: [id])
+  uploadedBy      User             @relation("DocumentUploader", fields: [uploadedById], references: [id])
+
+  @@index([projectId])
+  @@index([category])
+  @@map("documents")
+}
+
+model Approval {
+  id              String         @id @default(uuid())
+  entityType      String
+  entityId        String
+  action          String
+  status          ApprovalStatus @default(PENDING)
+  comment         String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Foreign Keys
+  projectId       String?
+  contractId      String?
+  userId          String
+
+  // Relations
+  project         Project?       @relation(fields: [projectId], references: [id])
+  contract        Contract?      @relation(fields: [contractId], references: [id])
+  user            User           @relation("ApprovalUser", fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([status])
+  @@map("approvals")
+}
+
+model Notification {
+  id              String           @id @default(uuid())
+  type            NotificationType @default(GENERAL)
+  title           String
+  message         String
+  isRead          Boolean          @default(false)
+  link            String?
+  createdAt       DateTime         @default(now())
+
+  // Foreign Keys
+  senderId        String?
+  receiverId      String
+
+  // Relations
+  sender          User?            @relation("NotificationSender", fields: [senderId], references: [id])
+  receiver        User             @relation("NotificationReceiver", fields: [receiverId], references: [id])
+
+  @@index([receiverId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  action          String
+  entityType      String
+  entityId        String?
+  oldValue        Json?
+  newValue        Json?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  // Foreign Keys
+  userId          String?
+
+  // Relations
+  user            User?    @relation("AuditLogUser", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  permissions Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}

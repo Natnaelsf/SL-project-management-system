@@ -1,0 +1,31 @@
+# Root docker-compose.yml
+# This file references the main docker-compose configuration in the docker/ directory.
+# To use, run: docker compose -f docker/docker-compose.yml up -d
+
+# Alternatively, you can symlink or copy the docker-compose.yml file to the root:
+# cp docker/docker-compose.yml docker-compose.yml
+
+services:
+  postgres:
+    extends:
+      file: docker/docker-compose.yml
+      service: postgres
+
+  backend:
+    extends:
+      file: docker/docker-compose.yml
+      service: backend
+
+  frontend:
+    extends:
+      file: docker/docker-compose.yml
+      service: frontend
+
+  nginx:
+    extends:
+      file: docker/docker-compose.yml
+      service: nginx
+
+volumes:
+  postgres_data:
+  backend_uploads:

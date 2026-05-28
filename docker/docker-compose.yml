@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: slpcms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: slpcms
+      POSTGRES_PASSWORD: slpcms123
+      POSTGRES_DB: slpcms
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slpcms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: slpcms-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://slpcms:slpcms123@postgres:5432/slpcms?schema=public"
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-super-secret-refresh-key-change-in-production-2024}
+      JWT_EXPIRATION: "15m"
+      JWT_REFRESH_EXPIRATION: "7d"
+      NODE_ENV: production
+      PORT: 4000
+      API_PREFIX: /api/v1
+      UPLOAD_DIR: ./uploads
+      MAX_FILE_SIZE: "10485760"
+      CORS_ORIGIN: "http://192.168.100.205"
+      THROTTLE_TTL: "60"
+      THROTTLE_LIMIT: "100"
+    ports:
+      - "4000:4000"
+    volumes:
+      - backend_uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: slpcms-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://192.168.100.205/api/v1
+    ports:
+      - "8080:3000"  # Host 8080 → container 3000
+
+  nginx:
+    image: nginx:alpine
+    container_name: slpcms-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      # - "443:443"  # Uncomment if you add SSL certificates
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # - ./ssl:/etc/nginx/ssl:ro  # Uncomment for SSL
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  postgres_data:
+  backend_uploads:
